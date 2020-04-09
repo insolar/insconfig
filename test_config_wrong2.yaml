@@ -3,3 +3,4 @@ level2:
   level3:
     level3text: text3
     nullstring: null
+mapfield: null

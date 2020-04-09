@@ -36,6 +36,7 @@ type Level2 struct {
 type CfgStruct struct {
 	Level1text string
 	Level2     Level2
+	MapField   map[string]Level2
 }
 
 type anonymousEmbeddedStruct struct {
@@ -65,6 +66,15 @@ func Test_Load(t *testing.T) {
 		require.Equal(t, cfg.Level1text, "text1")
 		require.Equal(t, cfg.Level2.Level2text, "text2")
 		require.Equal(t, cfg.Level2.Level3.Level3text, "text3")
+		require.Len(t, cfg.MapField, 2)
+		key1 := cfg.MapField["key1"]
+		require.Equal(t, key1.Level2text, "key1text2")
+		require.Equal(t, key1.Level3.Level3text, "key1text3")
+		require.Nil(t, key1.Level3.NullString)
+		key2 := cfg.MapField["key2"]
+		require.Equal(t, key2.Level2text, "key2text2")
+		require.Equal(t, key2.Level3.Level3text, "key2text3")
+		require.NotNil(t, key2.Level3.NullString)
 	})
 
 	t.Run("ENV overriding", func(t *testing.T) {
@@ -106,10 +116,22 @@ func Test_Load(t *testing.T) {
 		_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL2TEXT", "newTextValue2")
 		_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL3_LEVEL3TEXT", "newTextValue3")
 		_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL3_NULLSTRING", "text")
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL2TEXT", `1`)
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_LEVEL3TEXT", `2`)
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_NULLSTRING", `3`)
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL2TEXT", `1`)
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_LEVEL3TEXT", `2`)
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_NULLSTRING", `3`)
 		defer os.Unsetenv("TESTPREFIX_LEVEL1TEXT")
 		defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL2TEXT")
 		defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL3_LEVEL3TEXT")
 		defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL3_NULLSTRING")
+		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL2TEXT")
+		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_LEVEL3TEXT")
+		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_NULLSTRING")
+		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL2TEXT")
+		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_LEVEL3TEXT")
+		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_NULLSTRING")
 
 		cfg := CfgStruct{}
 		params := insconfig.Params{
@@ -124,6 +146,42 @@ func Test_Load(t *testing.T) {
 		require.Equal(t, cfg.Level1text, "newTextValue1")
 		require.Equal(t, cfg.Level2.Level2text, "newTextValue2")
 		require.Equal(t, cfg.Level2.Level3.Level3text, "newTextValue3")
+	})
+
+	t.Run("ENV only, not enough keys fail", func(t *testing.T) {
+		_ = os.Setenv("TESTPREFIX_LEVEL1TEXT", "newTextValue1")
+		_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL3_LEVEL3TEXT", "newTextValue3")
+		_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL3_NULLSTRING", "text")
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL2TEXT", `1`)
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_NULLSTRING", `3`)
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY3_LEVEL2TEXT", `1`)
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL2TEXT", `1`)
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_LEVEL3TEXT", `2`)
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_NULLSTRING", `3`)
+		defer os.Unsetenv("TESTPREFIX_LEVEL1TEXT")
+		defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL3_LEVEL3TEXT")
+		defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL3_NULLSTRING")
+		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL2TEXT")
+		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_NULLSTRING")
+		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY3_LEVEL2TEXT")
+		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL2TEXT")
+		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_LEVEL3TEXT")
+		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_NULLSTRING")
+
+		cfg := CfgStruct{}
+		params := insconfig.Params{
+			EnvPrefix:        "testprefix",
+			ConfigPathGetter: testPathGetter{""},
+			FileNotRequired:  true,
+		}
+
+		insConfigurator := insconfig.New(params)
+		err := insConfigurator.Load(&cfg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Level2.Level2text")
+		require.Contains(t, err.Error(), "MapField.key1.Level3.Level3text")
+		require.Contains(t, err.Error(), "MapField.key3.Level3.Level3text")
+		require.Contains(t, err.Error(), "MapField.key3.Level3.NullString")
 	})
 
 	t.Run("extra env fail", func(t *testing.T) {

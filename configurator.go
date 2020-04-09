@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"regexp"
 	"strings"
 
 	"github.com/mitchellh/mapstructure"
@@ -27,6 +28,8 @@ import (
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
 )
+
+const placeholder = "<-key->"
 
 // Params for config parsing
 type Params struct {
@@ -92,12 +95,15 @@ func (i *insConfigurator) load(path string, configStruct interface{}) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to unmarshal config file into configuration structure")
 	}
-	configStructKeys, err := i.checkAllValuesIsSet(configStruct)
+	configStructKeys := deepFieldNames(configStruct, "")
+	configStructKeys, mapKeys := separateKeys(configStructKeys)
+	configStructKeys, err = i.checkNoExtraENVValues(configStructKeys, mapKeys)
 	if err != nil {
 		return err
 	}
 
-	if err := i.checkNoExtraENVValues(configStructKeys); err != nil {
+	err = i.checkAllValuesIsSet(configStructKeys)
+	if err != nil {
 		return err
 	}
 
@@ -112,13 +118,18 @@ func (i *insConfigurator) load(path string, configStruct interface{}) error {
 	return nil
 }
 
-func (i *insConfigurator) checkNoExtraENVValues(structKeys []string) error {
+func (i *insConfigurator) checkNoExtraENVValues(structKeys []string, mapKeys []string) ([]string, error) {
 	var errorKeys []string
 	prefixLen := len(i.params.EnvPrefix)
 	for _, e := range os.Environ() {
 		if len(e) > prefixLen && e[0:prefixLen]+"_" == strings.ToUpper(i.params.EnvPrefix)+"_" {
 			kv := strings.SplitN(e, "=", 2)
 			key := strings.ReplaceAll(strings.Replace(strings.ToLower(kv[0]), i.params.EnvPrefix+"_", "", 1), "_", ".")
+
+			if k, match := matchMapKey(mapKeys, key); match && !stringInSlice(key, structKeys) {
+				structKeys = append(structKeys, newKeys(mapKeys, k)...)
+			}
+
 			if stringInSlice(key, structKeys) {
 				// This manually sets value from ENV and overrides everything, this temporarily fix issue https://github.com/spf13/viper/issues/761
 				i.viper.Set(key, kv[1])
@@ -128,28 +139,63 @@ func (i *insConfigurator) checkNoExtraENVValues(structKeys []string) error {
 		}
 	}
 	if len(errorKeys) > 0 {
-		return errors.New(fmt.Sprintf("Wrong config keys found in ENV: %s", strings.Join(errorKeys, ", ")))
+		return structKeys, errors.New(fmt.Sprintf("Wrong config keys found in ENV: %s", strings.Join(errorKeys, ", ")))
 	}
-	return nil
+	return structKeys, nil
 }
 
-func (i *insConfigurator) checkAllValuesIsSet(configStruct interface{}) ([]string, error) {
+func separateKeys(list []string) (names []string, keys []string) {
+	for _, s := range list {
+		if strings.Contains(s, placeholder) {
+			keys = append(keys, s)
+		} else {
+			names = append(names, s)
+		}
+	}
+	return names, keys
+}
+
+func newKeys(keys []string, key string) []string {
+	var names []string
+	for _, s := range keys {
+		names = append(names, strings.Replace(s, placeholder, key, 1))
+	}
+	return names
+}
+
+func matchMapKey(keys []string, key string) (string, bool) {
+	for _, k := range keys {
+		l := strings.ToLower(k)
+		pattern := strings.ReplaceAll(l, ".", "\\.")
+		pattern = strings.Replace(pattern, placeholder, ".+", 1)
+		match, err := regexp.MatchString(pattern, key)
+		if err != nil {
+			fmt.Println(err)
+		}
+		if match {
+			parts := strings.Split(l, placeholder)
+			return strings.TrimSuffix(strings.TrimPrefix(key, parts[0]), parts[1]), true
+		}
+	}
+	return "", false
+}
+
+func (i *insConfigurator) checkAllValuesIsSet(cstructKeys []string) error {
 	var errorKeys []string
-	names := deepFieldNames(configStruct, "")
 	allKeys := i.viper.AllKeys()
-	for _, keyName := range names {
+	for _, keyName := range cstructKeys {
 		if !i.viper.IsSet(keyName) {
 			// Due to a bug https://github.com/spf13/viper/issues/447 we can't use InConfig, so
-			if !stringInSlice(keyName, allKeys) {
+			if !stringInSlice(keyName, allKeys) && !strings.Contains(keyName, placeholder) {
 				errorKeys = append(errorKeys, keyName)
 			}
 			// Value of this key is "null" but it's set in config file
 		}
 	}
 	if len(errorKeys) > 0 {
-		return nil, errors.New(fmt.Sprintf("Keys is not defined in config: %s", strings.Join(errorKeys, ", ")))
+		return errors.New(fmt.Sprintf("Keys is not defined in config: %s", strings.Join(errorKeys, ", ")))
 	}
-	return names, nil
+	return nil
 }
 
 func stringInSlice(a string, list []string) bool {
@@ -195,6 +241,30 @@ func deepFieldNames(iface interface{}, prefix string) []string {
 			}
 
 			names = append(names, deepFieldNames(v.Interface(), newPrefix)...)
+		case reflect.Map:
+			if len(v.MapKeys()) != 0 {
+				for _, k := range v.MapKeys() {
+					key := k.String()
+					newPrefix := ""
+					currPrefix := ifv.Type().Field(i).Name
+					if prefix != "" {
+						newPrefix = strings.Join([]string{prefix, currPrefix, key}, ".")
+					} else {
+						newPrefix = strings.Join([]string{currPrefix, key}, ".")
+					}
+					names = append(names, deepFieldNames(v.MapIndex(k).Interface(), newPrefix)...)
+				}
+			} else {
+				newPrefix := ""
+				currPrefix := ifv.Type().Field(i).Name
+				if prefix != "" {
+					newPrefix = strings.Join([]string{prefix, currPrefix, placeholder}, ".")
+				} else {
+					newPrefix = strings.Join([]string{currPrefix, placeholder}, ".")
+				}
+				e := v.Type().Elem()
+				names = append(names, deep(e, newPrefix)...)
+			}
 		default:
 			prefWithPoint := ""
 			if prefix != "" {
@@ -204,6 +274,32 @@ func deepFieldNames(iface interface{}, prefix string) []string {
 		}
 	}
 
+	return names
+}
+
+func deep(t reflect.Type, prefix string) []string {
+	names := make([]string, 0)
+
+	switch t.Kind() {
+	case reflect.Struct:
+		for i := 0; i < t.NumField(); i++ {
+			tf := t.Field(i)
+
+			var newPref string
+			if prefix != "" {
+				newPref = strings.Join([]string{prefix, tf.Name}, ".")
+			} else {
+				newPref = tf.Name
+			}
+
+			z := reflect.Zero(tf.Type)
+			names = append(names, deep(z.Type(), newPref)...)
+		}
+	default:
+		if prefix != "" {
+			names = append(names, prefix)
+		}
+	}
 	return names
 }
 
