@@ -15,3 +15,7 @@ mapfield:
     level3:
       level3text: key2text3
       nullstring: key2text
+map2:
+  key3:
+    level3text: textmap2l3
+    nullstring: null

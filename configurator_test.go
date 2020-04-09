@@ -97,7 +97,11 @@ func Test_Load(t *testing.T) {
 
 	t.Run("ENV has values, that is not in config, but it should", func(t *testing.T) {
 		_ = os.Setenv("TESTPREFIX_LEVEL1TEXT", "newTextValue1")
+		_ = os.Setenv("TESTPREFIX_MAP2_ONE_LEVEL3TEXT", "newTextValue1")
+		_ = os.Setenv("TESTPREFIX_MAP2_ONE_NULLSTRING", "newTextValue1")
 		defer os.Unsetenv("TESTPREFIX_LEVEL1TEXT")
+		defer os.Unsetenv("TESTPREFIX_MAP2_ONE_LEVEL3TEXT")
+		defer os.Unsetenv("TESTPREFIX_MAP2_ONE_NULLSTRING")
 		cfg := CfgStruct{}
 		params := insconfig.Params{
 			EnvPrefix:        "testprefix",
@@ -199,6 +203,8 @@ func Test_Load(t *testing.T) {
 		require.Contains(t, err.Error(), "mapfield.key1.level3.level3text")
 		require.Contains(t, err.Error(), "mapfield.key3.level3.level3text")
 		require.Contains(t, err.Error(), "mapfield.key3.level3.nullstring")
+		require.Contains(t, err.Error(), "map2.<-key->.nullstring")
+		require.Contains(t, err.Error(), "map2.<-key->.level3text")
 	})
 
 	t.Run("extra env fail", func(t *testing.T) {
@@ -259,9 +265,10 @@ func Test_Load(t *testing.T) {
 		insConfigurator := insconfig.New(params)
 		err := insConfigurator.Load(&cfg)
 		require.Error(t, err)
-		println(err.Error())
 
 		require.Contains(t, err.Error(), "level1text")
+		require.Contains(t, err.Error(), "map2.<-key->.level3text")
+		require.Contains(t, err.Error(), "map2.<-key->.nullstring")
 	})
 
 	t.Run("required file not found", func(t *testing.T) {

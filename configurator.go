@@ -102,6 +102,12 @@ func (i *insConfigurator) load(path string, configStruct interface{}) error {
 		return err
 	}
 
+	for k := range mapKeys {
+		if used := mapKeys[k]; !used {
+			configStructKeys = append(configStructKeys, k)
+		}
+	}
+
 	err = i.checkAllValuesIsSet(configStructKeys)
 	if err != nil {
 		return err
@@ -118,7 +124,7 @@ func (i *insConfigurator) load(path string, configStruct interface{}) error {
 	return nil
 }
 
-func (i *insConfigurator) checkNoExtraENVValues(structKeys []string, mapKeys []string) ([]string, error) {
+func (i *insConfigurator) checkNoExtraENVValues(structKeys []string, mapKeys map[string]bool) ([]string, error) {
 	var errorKeys []string
 	prefixLen := len(i.params.EnvPrefix)
 	for _, e := range os.Environ() {
@@ -144,31 +150,34 @@ func (i *insConfigurator) checkNoExtraENVValues(structKeys []string, mapKeys []s
 	return structKeys, nil
 }
 
-func separateKeys(list []string) (names []string, keys []string) {
+func separateKeys(list []string) ([]string, map[string]bool) {
+	var structKeys []string
+	mapKeys := make(map[string]bool)
 	for _, s := range list {
 		if strings.Contains(s, placeholder) {
-			keys = append(keys, s)
+			mapKeys[s] = false
 		} else {
-			names = append(names, s)
+			structKeys = append(structKeys, s)
 		}
 	}
-	return names, keys
+	return structKeys, mapKeys
 }
 
-func newKeys(keys []string, key, pref string) []string {
+func newKeys(keys map[string]bool, key, pref string) []string {
 	var names []string
 	oldStr := strings.Join([]string{pref, placeholder}, "")
 	newStr := strings.Join([]string{pref, key}, "")
-	for _, k := range keys {
+	for k := range keys {
 		if strings.HasPrefix(k, oldStr) {
 			names = append(names, strings.Replace(k, oldStr, newStr, 1))
+			keys[k] = true
 		}
 	}
 	return names
 }
 
-func matchMapKey(keys []string, key string) (string, string, bool) {
-	for _, k := range keys {
+func matchMapKey(keys map[string]bool, key string) (string, string, bool) {
+	for k := range keys {
 		l := strings.ToLower(k)
 		pattern := strings.ReplaceAll(l, ".", "\\.")
 		pattern = strings.Replace(pattern, placeholder, ".+", 1)
@@ -190,7 +199,7 @@ func (i *insConfigurator) checkAllValuesIsSet(cstructKeys []string) error {
 	for _, keyName := range cstructKeys {
 		if !i.viper.IsSet(keyName) {
 			// Due to a bug https://github.com/spf13/viper/issues/447 we can't use InConfig, so
-			if !stringInSlice(keyName, allKeys) && !strings.Contains(keyName, placeholder) {
+			if !stringInSlice(keyName, allKeys) {
 				errorKeys = append(errorKeys, keyName)
 			}
 			// Value of this key is "null" but it's set in config file
