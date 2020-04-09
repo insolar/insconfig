@@ -193,10 +193,10 @@ func matchMapKey(keys map[string]bool, key string) (string, string, bool) {
 	return "", "", false
 }
 
-func (i *insConfigurator) checkAllValuesIsSet(cstructKeys []string) error {
+func (i *insConfigurator) checkAllValuesIsSet(structKeys []string) error {
 	var errorKeys []string
 	allKeys := i.viper.AllKeys()
-	for _, keyName := range cstructKeys {
+	for _, keyName := range structKeys {
 		if !i.viper.IsSet(keyName) {
 			// Due to a bug https://github.com/spf13/viper/issues/447 we can't use InConfig, so
 			if !stringInSlice(keyName, allKeys) {
@@ -276,7 +276,7 @@ func deepFieldNames(iface interface{}, prefix string) []string {
 					newPrefix = strings.Join([]string{currPrefix, placeholder}, ".")
 				}
 				e := v.Type().Elem()
-				names = append(names, deep(e, strings.ToLower(newPrefix))...)
+				names = append(names, deepTypeFields(e, strings.ToLower(newPrefix))...)
 			}
 		default:
 			prefWithPoint := ""
@@ -290,7 +290,7 @@ func deepFieldNames(iface interface{}, prefix string) []string {
 	return names
 }
 
-func deep(t reflect.Type, prefix string) []string {
+func deepTypeFields(t reflect.Type, prefix string) []string {
 	names := make([]string, 0)
 
 	switch t.Kind() {
@@ -306,7 +306,7 @@ func deep(t reflect.Type, prefix string) []string {
 			}
 
 			z := reflect.Zero(tf.Type)
-			names = append(names, deep(z.Type(), strings.ToLower(newPref))...)
+			names = append(names, deepTypeFields(z.Type(), strings.ToLower(newPref))...)
 		}
 	default:
 		if prefix != "" {
