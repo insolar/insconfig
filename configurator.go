@@ -126,8 +126,8 @@ func (i *insConfigurator) checkNoExtraENVValues(structKeys []string, mapKeys []s
 			kv := strings.SplitN(e, "=", 2)
 			key := strings.ReplaceAll(strings.Replace(strings.ToLower(kv[0]), i.params.EnvPrefix+"_", "", 1), "_", ".")
 
-			if k, match := matchMapKey(mapKeys, key); match && !stringInSlice(key, structKeys) {
-				structKeys = append(structKeys, newKeys(mapKeys, k)...)
+			if k, pref, match := matchMapKey(mapKeys, key); match && !stringInSlice(key, structKeys) {
+				structKeys = append(structKeys, newKeys(mapKeys, k, pref)...)
 			}
 
 			if stringInSlice(key, structKeys) {
@@ -155,15 +155,19 @@ func separateKeys(list []string) (names []string, keys []string) {
 	return names, keys
 }
 
-func newKeys(keys []string, key string) []string {
+func newKeys(keys []string, key, pref string) []string {
 	var names []string
-	for _, s := range keys {
-		names = append(names, strings.Replace(s, placeholder, key, 1))
+	oldStr := strings.Join([]string{pref, placeholder}, "")
+	newStr := strings.Join([]string{pref, key}, "")
+	for _, k := range keys {
+		if strings.HasPrefix(k, oldStr) {
+			names = append(names, strings.Replace(k, oldStr, newStr, 1))
+		}
 	}
 	return names
 }
 
-func matchMapKey(keys []string, key string) (string, bool) {
+func matchMapKey(keys []string, key string) (string, string, bool) {
 	for _, k := range keys {
 		l := strings.ToLower(k)
 		pattern := strings.ReplaceAll(l, ".", "\\.")
@@ -174,10 +178,10 @@ func matchMapKey(keys []string, key string) (string, bool) {
 		}
 		if match {
 			parts := strings.Split(l, placeholder)
-			return strings.TrimSuffix(strings.TrimPrefix(key, parts[0]), parts[1]), true
+			return strings.TrimSuffix(strings.TrimPrefix(key, parts[0]), parts[1]), parts[0], true
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 func (i *insConfigurator) checkAllValuesIsSet(cstructKeys []string) error {
@@ -240,7 +244,7 @@ func deepFieldNames(iface interface{}, prefix string) []string {
 				newPrefix = currPrefix
 			}
 
-			names = append(names, deepFieldNames(v.Interface(), newPrefix)...)
+			names = append(names, deepFieldNames(v.Interface(), strings.ToLower(newPrefix))...)
 		case reflect.Map:
 			if len(v.MapKeys()) != 0 {
 				for _, k := range v.MapKeys() {
@@ -252,7 +256,7 @@ func deepFieldNames(iface interface{}, prefix string) []string {
 					} else {
 						newPrefix = strings.Join([]string{currPrefix, key}, ".")
 					}
-					names = append(names, deepFieldNames(v.MapIndex(k).Interface(), newPrefix)...)
+					names = append(names, deepFieldNames(v.MapIndex(k).Interface(), strings.ToLower(newPrefix))...)
 				}
 			} else {
 				newPrefix := ""
@@ -263,14 +267,14 @@ func deepFieldNames(iface interface{}, prefix string) []string {
 					newPrefix = strings.Join([]string{currPrefix, placeholder}, ".")
 				}
 				e := v.Type().Elem()
-				names = append(names, deep(e, newPrefix)...)
+				names = append(names, deep(e, strings.ToLower(newPrefix))...)
 			}
 		default:
 			prefWithPoint := ""
 			if prefix != "" {
 				prefWithPoint = prefix + "."
 			}
-			names = append(names, prefWithPoint+ifv.Type().Field(i).Name)
+			names = append(names, strings.ToLower(prefWithPoint+ifv.Type().Field(i).Name))
 		}
 	}
 
@@ -293,11 +297,11 @@ func deep(t reflect.Type, prefix string) []string {
 			}
 
 			z := reflect.Zero(tf.Type)
-			names = append(names, deep(z.Type(), newPref)...)
+			names = append(names, deep(z.Type(), strings.ToLower(newPref))...)
 		}
 	default:
 		if prefix != "" {
-			names = append(names, prefix)
+			names = append(names, strings.ToLower(prefix))
 		}
 	}
 	return names

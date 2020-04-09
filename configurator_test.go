@@ -37,6 +37,7 @@ type CfgStruct struct {
 	Level1text string
 	Level2     Level2
 	MapField   map[string]Level2
+	Map2       map[string]Level3
 }
 
 type anonymousEmbeddedStruct struct {
@@ -116,12 +117,14 @@ func Test_Load(t *testing.T) {
 		_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL2TEXT", "newTextValue2")
 		_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL3_LEVEL3TEXT", "newTextValue3")
 		_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL3_NULLSTRING", "text")
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL2TEXT", `1`)
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_LEVEL3TEXT", `2`)
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_NULLSTRING", `3`)
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL2TEXT", `1`)
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_LEVEL3TEXT", `2`)
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_NULLSTRING", `3`)
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL2TEXT", "1")
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_LEVEL3TEXT", "2")
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_NULLSTRING", "3")
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL2TEXT", "21")
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_LEVEL3TEXT", "22")
+		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_NULLSTRING", "23")
+		_ = os.Setenv("TESTPREFIX_MAP2_KEY3_LEVEL3TEXT", "32")
+		_ = os.Setenv("TESTPREFIX_MAP2_KEY3_NULLSTRING", "33")
 		defer os.Unsetenv("TESTPREFIX_LEVEL1TEXT")
 		defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL2TEXT")
 		defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL3_LEVEL3TEXT")
@@ -132,6 +135,8 @@ func Test_Load(t *testing.T) {
 		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL2TEXT")
 		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_LEVEL3TEXT")
 		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_NULLSTRING")
+		defer os.Unsetenv("TESTPREFIX_MAP2_KEY3_LEVEL3TEXT")
+		defer os.Unsetenv("TESTPREFIX_MAP2_KEY3_NULLSTRING")
 
 		cfg := CfgStruct{}
 		params := insconfig.Params{
@@ -143,9 +148,21 @@ func Test_Load(t *testing.T) {
 		insConfigurator := insconfig.New(params)
 		err := insConfigurator.Load(&cfg)
 		require.NoError(t, err)
-		require.Equal(t, cfg.Level1text, "newTextValue1")
-		require.Equal(t, cfg.Level2.Level2text, "newTextValue2")
-		require.Equal(t, cfg.Level2.Level3.Level3text, "newTextValue3")
+		require.Equal(t, "newTextValue1", cfg.Level1text)
+		require.Equal(t, "newTextValue2", cfg.Level2.Level2text)
+		require.Equal(t, "newTextValue3", cfg.Level2.Level3.Level3text)
+		mapField := cfg.MapField
+		require.Len(t, mapField, 2)
+		require.Equal(t, "1", mapField["key1"].Level2text)
+		require.Equal(t, "2", mapField["key1"].Level3.Level3text)
+		require.Equal(t, "3", *mapField["key1"].Level3.NullString)
+		require.Equal(t, "21", mapField["key2"].Level2text)
+		require.Equal(t, "22", mapField["key2"].Level3.Level3text)
+		require.Equal(t, "23", *mapField["key2"].Level3.NullString)
+		map2 := cfg.Map2
+		require.Len(t, map2, 1)
+		require.Equal(t, "32", map2["key3"].Level3text)
+		require.Equal(t, "33", *map2["key3"].NullString)
 	})
 
 	t.Run("ENV only, not enough keys fail", func(t *testing.T) {
@@ -178,10 +195,10 @@ func Test_Load(t *testing.T) {
 		insConfigurator := insconfig.New(params)
 		err := insConfigurator.Load(&cfg)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "Level2.Level2text")
-		require.Contains(t, err.Error(), "MapField.key1.Level3.Level3text")
-		require.Contains(t, err.Error(), "MapField.key3.Level3.Level3text")
-		require.Contains(t, err.Error(), "MapField.key3.Level3.NullString")
+		require.Contains(t, err.Error(), "level2.level2text")
+		require.Contains(t, err.Error(), "mapfield.key1.level3.level3text")
+		require.Contains(t, err.Error(), "mapfield.key3.level3.level3text")
+		require.Contains(t, err.Error(), "mapfield.key3.level3.nullstring")
 	})
 
 	t.Run("extra env fail", func(t *testing.T) {
@@ -244,7 +261,7 @@ func Test_Load(t *testing.T) {
 		require.Error(t, err)
 		println(err.Error())
 
-		require.Contains(t, err.Error(), "Level1text")
+		require.Contains(t, err.Error(), "level1text")
 	})
 
 	t.Run("required file not found", func(t *testing.T) {
