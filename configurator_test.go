@@ -54,275 +54,467 @@ func (g testPathGetter) GetConfigPath() string {
 }
 
 func Test_Load(t *testing.T) {
-	t.Run("happy", func(t *testing.T) {
-		cfg := CfgStruct{}
-		params := insconfig.Params{
-			EnvPrefix:        "testprefix",
-			ConfigPathGetter: testPathGetter{"test_config.yaml"},
-		}
+	t.Run("yaml", func(t *testing.T) {
+		t.Run("happy", func(t *testing.T) {
+			cfg := CfgStruct{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config.yaml"},
+			}
 
-		insConfigurator := insconfig.New(params)
-		err := insConfigurator.Load(&cfg)
-		require.NoError(t, err)
-		require.Equal(t, cfg.Level1text, "text1")
-		require.Equal(t, cfg.Level2.Level2text, "text2")
-		require.Equal(t, cfg.Level2.Level3.Level3text, "text3")
-		require.Len(t, cfg.MapField, 2)
-		key1 := cfg.MapField["key1"]
-		require.Equal(t, key1.Level2text, "key1text2")
-		require.Equal(t, key1.Level3.Level3text, "key1text3")
-		require.Nil(t, key1.Level3.NullString)
-		key2 := cfg.MapField["key2"]
-		require.Equal(t, key2.Level2text, "key2text2")
-		require.Equal(t, key2.Level3.Level3text, "key2text3")
-		require.NotNil(t, key2.Level3.NullString)
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.NoError(t, err)
+			require.Equal(t, cfg.Level1text, "text1")
+			require.Equal(t, cfg.Level2.Level2text, "text2")
+			require.Equal(t, cfg.Level2.Level3.Level3text, "text3")
+			require.Len(t, cfg.MapField, 2)
+			key1 := cfg.MapField["key1"]
+			require.Equal(t, key1.Level2text, "key1text2")
+			require.Equal(t, key1.Level3.Level3text, "key1text3")
+			require.Nil(t, key1.Level3.NullString)
+			key2 := cfg.MapField["key2"]
+			require.Equal(t, key2.Level2text, "key2text2")
+			require.Equal(t, key2.Level3.Level3text, "key2text3")
+			require.NotNil(t, key2.Level3.NullString)
+		})
+
+		t.Run("null string test", func(t *testing.T) {
+			cfg := CfgStruct{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config2.yaml"},
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.NoError(t, err)
+			require.Nil(t, cfg.Level2.Level3.NullString)
+		})
+
+		t.Run("embedded struct flatten test", func(t *testing.T) {
+			cfg := anonymousEmbeddedStruct{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config3.yaml"},
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.NoError(t, err)
+			require.Equal(t, cfg.Level4, "text4")
+		})
+
+		t.Run("fail extra in yaml", func(t *testing.T) {
+			cfg := CfgStruct{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config_wrong.yaml"},
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "nonexistent")
+		})
+
+		t.Run("fail not enough keys", func(t *testing.T) {
+			cfg := CfgStruct{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config_wrong2.yaml"},
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.Error(t, err)
+
+			require.Contains(t, err.Error(), "level1text")
+			require.Contains(t, err.Error(), "map2.<-key->.level3text")
+			require.Contains(t, err.Error(), "map2.<-key->.nullstring")
+		})
+
+		t.Run("fail required file not found", func(t *testing.T) {
+			cfg := CfgStruct{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"nonexistent.yaml"},
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "nonexistent.yaml")
+		})
 	})
 
-	t.Run("ENV overriding", func(t *testing.T) {
-		_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL2TEXT", "newTextValue")
-		defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL2TEXT")
-		cfg := CfgStruct{}
-		params := insconfig.Params{
-			EnvPrefix:        "testprefix",
-			ConfigPathGetter: testPathGetter{"test_config.yaml"},
-		}
+	t.Run("env", func(t *testing.T) {
+		t.Run("happy", func(t *testing.T) {
+			_ = os.Setenv("TESTPREFIX_LEVEL1TEXT", "newTextValue1")
+			_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL2TEXT", "newTextValue2")
+			_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL3_LEVEL3TEXT", "newTextValue3")
+			_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL3_NULLSTRING", "text")
+			_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL2TEXT", "1")
+			_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_LEVEL3TEXT", "2")
+			_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_NULLSTRING", "3")
+			_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL2TEXT", "21")
+			_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_LEVEL3TEXT", "22")
+			_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_NULLSTRING", "23")
+			_ = os.Setenv("TESTPREFIX_MAP2_KEY3_LEVEL3TEXT", "32")
+			_ = os.Setenv("TESTPREFIX_MAP2_KEY3_NULLSTRING", "33")
+			defer os.Unsetenv("TESTPREFIX_LEVEL1TEXT")
+			defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL2TEXT")
+			defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL3_LEVEL3TEXT")
+			defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL3_NULLSTRING")
+			defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL2TEXT")
+			defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_LEVEL3TEXT")
+			defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_NULLSTRING")
+			defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL2TEXT")
+			defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_LEVEL3TEXT")
+			defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_NULLSTRING")
+			defer os.Unsetenv("TESTPREFIX_MAP2_KEY3_LEVEL3TEXT")
+			defer os.Unsetenv("TESTPREFIX_MAP2_KEY3_NULLSTRING")
 
-		insConfigurator := insconfig.New(params)
-		err := insConfigurator.Load(&cfg)
-		require.NoError(t, err)
-		require.Equal(t, cfg.Level1text, "text1")
-		require.Equal(t, cfg.Level2.Level2text, "newTextValue")
-		require.Equal(t, cfg.Level2.Level3.Level3text, "text3")
+			cfg := CfgStruct{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{""},
+				FileNotRequired:  true,
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.NoError(t, err)
+			require.Equal(t, "newTextValue1", cfg.Level1text)
+			require.Equal(t, "newTextValue2", cfg.Level2.Level2text)
+			require.Equal(t, "newTextValue3", cfg.Level2.Level3.Level3text)
+			mapField := cfg.MapField
+			require.Len(t, mapField, 2)
+			require.Equal(t, "1", mapField["key1"].Level2text)
+			require.Equal(t, "2", mapField["key1"].Level3.Level3text)
+			require.Equal(t, "3", *mapField["key1"].Level3.NullString)
+			require.Equal(t, "21", mapField["key2"].Level2text)
+			require.Equal(t, "22", mapField["key2"].Level3.Level3text)
+			require.Equal(t, "23", *mapField["key2"].Level3.NullString)
+			map2 := cfg.Map2
+			require.Len(t, map2, 1)
+			require.Equal(t, "32", map2["key3"].Level3text)
+			require.Equal(t, "33", *map2["key3"].NullString)
+		})
+
+		t.Run("fail not enough keys", func(t *testing.T) {
+			_ = os.Setenv("TESTPREFIX_LEVEL1TEXT", "newTextValue1")
+			_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL3_LEVEL3TEXT", "newTextValue3")
+			_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL3_NULLSTRING", "text")
+			_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL2TEXT", "1")
+			_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_NULLSTRING", "3")
+			_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY3_LEVEL2TEXT", "31")
+			_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL2TEXT", "21")
+			_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_LEVEL3TEXT", "22")
+			_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_NULLSTRING", "23")
+			defer os.Unsetenv("TESTPREFIX_LEVEL1TEXT")
+			defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL3_LEVEL3TEXT")
+			defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL3_NULLSTRING")
+			defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL2TEXT")
+			defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_NULLSTRING")
+			defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY3_LEVEL2TEXT")
+			defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL2TEXT")
+			defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_LEVEL3TEXT")
+			defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_NULLSTRING")
+
+			cfg := CfgStruct{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{""},
+				FileNotRequired:  true,
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "level2.level2text")
+			require.Contains(t, err.Error(), "mapfield.key1.level3.level3text")
+			require.Contains(t, err.Error(), "mapfield.key3.level3.level3text")
+			require.Contains(t, err.Error(), "mapfield.key3.level3.nullstring")
+			require.Contains(t, err.Error(), "map2.<-key->.nullstring")
+			require.Contains(t, err.Error(), "map2.<-key->.level3text")
+		})
 	})
 
-	t.Run("ENV has values, that is not in config, but it should", func(t *testing.T) {
-		_ = os.Setenv("TESTPREFIX_LEVEL1TEXT", "newTextValue1")
-		_ = os.Setenv("TESTPREFIX_MAP2_ONE_LEVEL3TEXT", "newTextValue1")
-		_ = os.Setenv("TESTPREFIX_MAP2_ONE_NULLSTRING", "newTextValue1")
-		defer os.Unsetenv("TESTPREFIX_LEVEL1TEXT")
-		defer os.Unsetenv("TESTPREFIX_MAP2_ONE_LEVEL3TEXT")
-		defer os.Unsetenv("TESTPREFIX_MAP2_ONE_NULLSTRING")
-		cfg := CfgStruct{}
-		params := insconfig.Params{
-			EnvPrefix:        "testprefix",
-			ConfigPathGetter: testPathGetter{"test_config_wrong2.yaml"},
-		}
+	t.Run("yaml and env", func(t *testing.T) {
+		t.Run("env overrides yaml partially", func(t *testing.T) {
+			_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL2TEXT", "newTextValue")
+			defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL2TEXT")
+			cfg := CfgStruct{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config.yaml"},
+			}
 
-		insConfigurator := insconfig.New(params)
-		err := insConfigurator.Load(&cfg)
-		require.NoError(t, err)
-		require.Equal(t, cfg.Level1text, "newTextValue1")
-		require.Equal(t, cfg.Level2.Level2text, "text2")
-		require.Equal(t, cfg.Level2.Level3.Level3text, "text3")
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.NoError(t, err)
+			require.Equal(t, cfg.Level1text, "text1")
+			require.Equal(t, cfg.Level2.Level2text, "newTextValue")
+			require.Equal(t, cfg.Level2.Level3.Level3text, "text3")
+		})
+
+		t.Run("env adds values that is not in the yaml", func(t *testing.T) {
+			_ = os.Setenv("TESTPREFIX_LEVEL1TEXT", "newTextValue1")
+			_ = os.Setenv("TESTPREFIX_MAP2_ONE_LEVEL3TEXT", "newTextValue1")
+			_ = os.Setenv("TESTPREFIX_MAP2_ONE_NULLSTRING", "newTextValue1")
+			defer os.Unsetenv("TESTPREFIX_LEVEL1TEXT")
+			defer os.Unsetenv("TESTPREFIX_MAP2_ONE_LEVEL3TEXT")
+			defer os.Unsetenv("TESTPREFIX_MAP2_ONE_NULLSTRING")
+			cfg := CfgStruct{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config_wrong2.yaml"},
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.NoError(t, err)
+			require.Equal(t, cfg.Level1text, "newTextValue1")
+			require.Equal(t, cfg.Level2.Level2text, "text2")
+			require.Equal(t, cfg.Level2.Level3.Level3text, "text3")
+		})
+
+		t.Run("embedded struct override by env", func(t *testing.T) {
+			_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL2TEXT", "newTextValue")
+			defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL2TEXT")
+
+			cfg := anonymousEmbeddedStruct{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config3.yaml"},
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.NoError(t, err)
+			require.Equal(t, cfg.Level2.Level2text, "newTextValue")
+		})
+
+		t.Run("fail extra in env", func(t *testing.T) {
+			_ = os.Setenv("TESTPREFIX_NONEXISTENT_VALUE", "123")
+			defer os.Unsetenv("TESTPREFIX_NONEXISTENT_VALUE")
+
+			cfg := CfgStruct{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config.yaml"},
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "nonexistent")
+		})
+
+		t.Run("fail extra in env with empty value", func(t *testing.T) {
+			_ = os.Setenv("TESTPREFIX_NONEXISTENT_VALUE1", "")
+			_ = os.Setenv("TESTPREFIX_NONEXISTENT_VALUE2", "")
+			defer os.Unsetenv("TESTPREFIX_NONEXISTENT_VALUE1")
+			defer os.Unsetenv("TESTPREFIX_NONEXISTENT_VALUE2")
+
+			cfg := CfgStruct{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config.yaml"},
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "nonexistent.value1")
+			require.Contains(t, err.Error(), "nonexistent.value2")
+		})
 	})
 
-	t.Run("ENV only, no config files", func(t *testing.T) {
-		_ = os.Setenv("TESTPREFIX_LEVEL1TEXT", "newTextValue1")
-		_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL2TEXT", "newTextValue2")
-		_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL3_LEVEL3TEXT", "newTextValue3")
-		_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL3_NULLSTRING", "text")
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL2TEXT", "1")
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_LEVEL3TEXT", "2")
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_NULLSTRING", "3")
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL2TEXT", "21")
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_LEVEL3TEXT", "22")
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_NULLSTRING", "23")
-		_ = os.Setenv("TESTPREFIX_MAP2_KEY3_LEVEL3TEXT", "32")
-		_ = os.Setenv("TESTPREFIX_MAP2_KEY3_NULLSTRING", "33")
-		defer os.Unsetenv("TESTPREFIX_LEVEL1TEXT")
-		defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL2TEXT")
-		defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL3_LEVEL3TEXT")
-		defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL3_NULLSTRING")
-		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL2TEXT")
-		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_LEVEL3TEXT")
-		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_NULLSTRING")
-		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL2TEXT")
-		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_LEVEL3TEXT")
-		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_NULLSTRING")
-		defer os.Unsetenv("TESTPREFIX_MAP2_KEY3_LEVEL3TEXT")
-		defer os.Unsetenv("TESTPREFIX_MAP2_KEY3_NULLSTRING")
-
-		cfg := CfgStruct{}
-		params := insconfig.Params{
-			EnvPrefix:        "testprefix",
-			ConfigPathGetter: testPathGetter{""},
-			FileNotRequired:  true,
+	t.Run("map in config", func(t *testing.T) {
+		type MapValue struct {
+			Str  string
+			Num  int
+			Flag bool
 		}
 
-		insConfigurator := insconfig.New(params)
-		err := insConfigurator.Load(&cfg)
-		require.NoError(t, err)
-		require.Equal(t, "newTextValue1", cfg.Level1text)
-		require.Equal(t, "newTextValue2", cfg.Level2.Level2text)
-		require.Equal(t, "newTextValue3", cfg.Level2.Level3.Level3text)
-		mapField := cfg.MapField
-		require.Len(t, mapField, 2)
-		require.Equal(t, "1", mapField["key1"].Level2text)
-		require.Equal(t, "2", mapField["key1"].Level3.Level3text)
-		require.Equal(t, "3", *mapField["key1"].Level3.NullString)
-		require.Equal(t, "21", mapField["key2"].Level2text)
-		require.Equal(t, "22", mapField["key2"].Level3.Level3text)
-		require.Equal(t, "23", *mapField["key2"].Level3.NullString)
-		map2 := cfg.Map2
-		require.Len(t, map2, 1)
-		require.Equal(t, "32", map2["key3"].Level3text)
-		require.Equal(t, "33", *map2["key3"].NullString)
-	})
-
-	t.Run("ENV only, not enough keys fail", func(t *testing.T) {
-		_ = os.Setenv("TESTPREFIX_LEVEL1TEXT", "newTextValue1")
-		_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL3_LEVEL3TEXT", "newTextValue3")
-		_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL3_NULLSTRING", "text")
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL2TEXT", `1`)
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_NULLSTRING", `3`)
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY3_LEVEL2TEXT", `1`)
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL2TEXT", `1`)
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_LEVEL3TEXT", `2`)
-		_ = os.Setenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_NULLSTRING", `3`)
-		defer os.Unsetenv("TESTPREFIX_LEVEL1TEXT")
-		defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL3_LEVEL3TEXT")
-		defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL3_NULLSTRING")
-		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL2TEXT")
-		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY1_LEVEL3_NULLSTRING")
-		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY3_LEVEL2TEXT")
-		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL2TEXT")
-		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_LEVEL3TEXT")
-		defer os.Unsetenv("TESTPREFIX_MAPFIELD_KEY2_LEVEL3_NULLSTRING")
-
-		cfg := CfgStruct{}
-		params := insconfig.Params{
-			EnvPrefix:        "testprefix",
-			ConfigPathGetter: testPathGetter{""},
-			FileNotRequired:  true,
+		type OneMap struct {
+			One map[string]MapValue
 		}
 
-		insConfigurator := insconfig.New(params)
-		err := insConfigurator.Load(&cfg)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "level2.level2text")
-		require.Contains(t, err.Error(), "mapfield.key1.level3.level3text")
-		require.Contains(t, err.Error(), "mapfield.key3.level3.level3text")
-		require.Contains(t, err.Error(), "mapfield.key3.level3.nullstring")
-		require.Contains(t, err.Error(), "map2.<-key->.nullstring")
-		require.Contains(t, err.Error(), "map2.<-key->.level3text")
-	})
-
-	t.Run("extra env fail", func(t *testing.T) {
-		_ = os.Setenv("TESTPREFIX_NONEXISTENT_VALUE", "123")
-		defer os.Unsetenv("TESTPREFIX_NONEXISTENT_VALUE")
-
-		cfg := CfgStruct{}
-		params := insconfig.Params{
-			EnvPrefix:        "testprefix",
-			ConfigPathGetter: testPathGetter{"test_config.yaml"},
+		type TwoMaps struct {
+			One map[string]MapValue
+			Two map[string]MapValue
 		}
 
-		insConfigurator := insconfig.New(params)
-		err := insConfigurator.Load(&cfg)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "nonexistent")
-	})
+		t.Run("one map", func(t *testing.T) {
+			cfg := OneMap{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config_one_map.yaml"},
+				FileNotRequired:  true,
+			}
 
-	t.Run("extra env with empty value, fails", func(t *testing.T) {
-		_ = os.Setenv("TESTPREFIX_NONEXISTENT_VALUE1", "")
-		_ = os.Setenv("TESTPREFIX_NONEXISTENT_VALUE2", "")
-		defer os.Unsetenv("TESTPREFIX_NONEXISTENT_VALUE1")
-		defer os.Unsetenv("TESTPREFIX_NONEXISTENT_VALUE2")
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.NoError(t, err)
+			require.Len(t, cfg.One, 2)
+			first := cfg.One["first"]
+			require.Equal(t, "first-str", first.Str)
+			require.Equal(t, 1, first.Num)
+			require.True(t, first.Flag)
+			second := cfg.One["second"]
+			require.Equal(t, "second-str", second.Str)
+			require.Equal(t, 2, second.Num)
+			require.False(t, second.Flag)
+		})
 
-		cfg := CfgStruct{}
-		params := insconfig.Params{
-			EnvPrefix:        "testprefix",
-			ConfigPathGetter: testPathGetter{"test_config.yaml"},
-		}
+		t.Run("two maps one level", func(t *testing.T) {
+			cfg := TwoMaps{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config_two_maps.yaml"},
+				FileNotRequired:  true,
+			}
 
-		insConfigurator := insconfig.New(params)
-		err := insConfigurator.Load(&cfg)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "nonexistent.value1")
-		require.Contains(t, err.Error(), "nonexistent.value2")
-	})
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.NoError(t, err)
+			require.Len(t, cfg.One, 2)
+			first := cfg.One["first"]
+			require.Equal(t, "first-str", first.Str)
+			require.Equal(t, 1, first.Num)
+			require.True(t, first.Flag)
+			second := cfg.One["second"]
+			require.Equal(t, "second-str", second.Str)
+			require.Equal(t, 2, second.Num)
+			require.False(t, second.Flag)
+			require.Len(t, cfg.Two, 1)
+			firstOfTwo := cfg.Two["first"]
+			require.Equal(t, "two-first-str", firstOfTwo.Str)
+			require.Equal(t, 3, firstOfTwo.Num)
+			require.True(t, firstOfTwo.Flag)
+		})
 
-	t.Run("extra in file fail", func(t *testing.T) {
-		cfg := CfgStruct{}
-		params := insconfig.Params{
-			EnvPrefix:        "testprefix",
-			ConfigPathGetter: testPathGetter{"test_config_wrong.yaml"},
-		}
+		t.Run("two maps nested", func(t *testing.T) {
+			type TwoNested struct {
+				One map[string]map[string]MapValue
+			}
 
-		insConfigurator := insconfig.New(params)
-		err := insConfigurator.Load(&cfg)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "nonexistent")
-	})
+			cfg := TwoNested{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config_two_maps_nested.yaml"},
+				FileNotRequired:  true,
+			}
 
-	t.Run("not set in file fail", func(t *testing.T) {
-		cfg := CfgStruct{}
-		params := insconfig.Params{
-			EnvPrefix:        "testprefix",
-			ConfigPathGetter: testPathGetter{"test_config_wrong2.yaml"},
-		}
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.NoError(t, err)
+			require.Len(t, cfg.One, 2)
+			first := cfg.One["first"]
+			require.Len(t, first, 2)
+			ff := first["first"]
+			require.Equal(t, "first-str", ff.Str)
+			require.Equal(t, 1, ff.Num)
+			require.True(t, ff.Flag)
+			fs := first["second"]
+			require.Equal(t, "second-str", fs.Str)
+			require.Equal(t, 2, fs.Num)
+			require.False(t, fs.Flag)
+			second := cfg.One["second"]
+			require.Len(t, second, 1)
+			sf := second["first"]
+			require.Equal(t, "second-str", sf.Str)
+			require.Equal(t, 2, sf.Num)
+			require.False(t, sf.Flag)
+		})
 
-		insConfigurator := insconfig.New(params)
-		err := insConfigurator.Load(&cfg)
-		require.Error(t, err)
+		t.Run("map-struct-map", func(t *testing.T) {
+			type StructMap struct {
+				Two map[string]MapValue
+			}
+			type MapStructMap struct {
+				One map[string]StructMap
+			}
 
-		require.Contains(t, err.Error(), "level1text")
-		require.Contains(t, err.Error(), "map2.<-key->.level3text")
-		require.Contains(t, err.Error(), "map2.<-key->.nullstring")
-	})
+			cfg := MapStructMap{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config_map_struct_map.yaml"},
+				FileNotRequired:  true,
+			}
 
-	t.Run("required file not found", func(t *testing.T) {
-		cfg := CfgStruct{}
-		params := insconfig.Params{
-			EnvPrefix:        "testprefix",
-			ConfigPathGetter: testPathGetter{"nonexistent.yaml"},
-		}
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.NoError(t, err)
+			require.Len(t, cfg.One, 2)
+			first := cfg.One["first"]
+			require.Len(t, first.Two, 1)
+			ff := first.Two["first"]
+			require.Equal(t, "first-first", ff.Str)
+			require.Equal(t, 1, ff.Num)
+			require.True(t, ff.Flag)
+			second := cfg.One["second"]
+			require.Len(t, second.Two, 2)
+			sf := second.Two["first"]
+			require.Equal(t, "second-first", sf.Str)
+			require.Equal(t, 21, sf.Num)
+			require.False(t, sf.Flag)
+			ss := second.Two["second"]
+			require.Equal(t, "second-second", ss.Str)
+			require.Equal(t, 22, ss.Num)
+			require.True(t, ss.Flag)
+		})
 
-		insConfigurator := insconfig.New(params)
-		err := insConfigurator.Load(&cfg)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "nonexistent.yaml")
-	})
+		t.Run("fail one map int key", func(t *testing.T) {
+			type MapIntKey struct {
+				One map[int]MapValue
+			}
+			cfg := MapIntKey{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config_map_int_key.yaml"},
+				FileNotRequired:  false,
+			}
 
-	t.Run("null string test", func(t *testing.T) {
-		cfg := CfgStruct{}
-		params := insconfig.Params{
-			EnvPrefix:        "testprefix",
-			ConfigPathGetter: testPathGetter{"test_config2.yaml"},
-		}
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "maps in config must have string keys but got:")
+		})
 
-		insConfigurator := insconfig.New(params)
-		err := insConfigurator.Load(&cfg)
-		require.NoError(t, err)
-		require.Nil(t, cfg.Level2.Level3.NullString)
-	})
+		t.Run("fail one map struct key", func(t *testing.T) {
+			type MapIntKey struct {
+				One map[MapValue]MapValue
+			}
+			cfg := MapIntKey{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{""},
+				FileNotRequired:  true,
+			}
 
-	t.Run("embedded struct flatten test", func(t *testing.T) {
-		cfg := anonymousEmbeddedStruct{}
-		params := insconfig.Params{
-			EnvPrefix:        "testprefix",
-			ConfigPathGetter: testPathGetter{"test_config3.yaml"},
-		}
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "maps in config must have string keys but got:")
+		})
 
-		insConfigurator := insconfig.New(params)
-		err := insConfigurator.Load(&cfg)
-		require.NoError(t, err)
-		require.Equal(t, cfg.Level4, "text4")
-	})
+		t.Run("fail key duplication", func(t *testing.T) {
+			t.Skip("functionality wil be fixed in a next commit")
+			cfg := OneMap{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config_key_duplication.yaml"},
+				FileNotRequired:  true,
+			}
 
-	t.Run("embedded struct override by env", func(t *testing.T) {
-		_ = os.Setenv("TESTPREFIX_LEVEL2_LEVEL2TEXT", "newTextValue")
-		defer os.Unsetenv("TESTPREFIX_LEVEL2_LEVEL2TEXT")
-
-		cfg := anonymousEmbeddedStruct{}
-		params := insconfig.Params{
-			EnvPrefix:        "testprefix",
-			ConfigPathGetter: testPathGetter{"test_config3.yaml"},
-		}
-
-		insConfigurator := insconfig.New(params)
-		err := insConfigurator.Load(&cfg)
-		require.NoError(t, err)
-		require.Equal(t, cfg.Level2.Level2text, "newTextValue")
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "ddddd")
+		})
 	})
 }

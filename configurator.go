@@ -95,7 +95,11 @@ func (i *insConfigurator) load(path string, configStruct interface{}) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to unmarshal config file into configuration structure")
 	}
-	configStructKeys := deepFieldNames(configStruct, "")
+	configStructKeys, err := deepFieldNames(configStruct, "")
+	if err != nil {
+		return err
+	}
+
 	configStructKeys, mapKeys := separateKeys(configStructKeys)
 	configStructKeys, err = i.checkNoExtraENVValues(configStructKeys, mapKeys)
 	if err != nil {
@@ -220,28 +224,26 @@ func stringInSlice(a string, list []string) bool {
 	return false
 }
 
-func deepFieldNames(iface interface{}, prefix string) []string {
+func deepFieldNames(iface interface{}, prefix string) ([]string, error) {
 	names := make([]string, 0)
-	v := reflect.ValueOf(iface)
-	ifv := reflect.Indirect(v)
-	s := ifv.Type()
+	ifv := reflect.Indirect(reflect.ValueOf(iface))
 
-	for i := 0; i < s.NumField(); i++ {
-		v := ifv.Field(i)
-		tagValue := ifv.Type().Field(i).Tag.Get("mapstructure")
-		tagParts := strings.Split(tagValue, ",")
+	switch ifv.Kind() {
+	case reflect.Struct:
+		for i := 0; i < ifv.Type().NumField(); i++ {
+			v := ifv.Field(i)
+			tagValue := ifv.Type().Field(i).Tag.Get("mapstructure")
+			tagParts := strings.Split(tagValue, ",")
 
-		// If "squash" is specified in the tag, we squash the field down.
-		squash := false
-		for _, tag := range tagParts[1:] {
-			if tag == "squash" {
-				squash = true
-				break
+			// If "squash" is specified in the tag, we squash the field down.
+			squash := false
+			for _, tag := range tagParts[1:] {
+				if tag == "squash" {
+					squash = true
+					break
+				}
 			}
-		}
 
-		switch v.Kind() {
-		case reflect.Struct:
 			newPrefix := ""
 			currPrefix := ""
 			if !squash {
@@ -253,67 +255,51 @@ func deepFieldNames(iface interface{}, prefix string) []string {
 				newPrefix = currPrefix
 			}
 
-			names = append(names, deepFieldNames(v.Interface(), strings.ToLower(newPrefix))...)
-		case reflect.Map:
-			if len(v.MapKeys()) != 0 {
-				for _, k := range v.MapKeys() {
-					key := k.String()
-					newPrefix := ""
-					currPrefix := ifv.Type().Field(i).Name
-					if prefix != "" {
-						newPrefix = strings.Join([]string{prefix, currPrefix, key}, ".")
-					} else {
-						newPrefix = strings.Join([]string{currPrefix, key}, ".")
-					}
-					names = append(names, deepFieldNames(v.MapIndex(k).Interface(), strings.ToLower(newPrefix))...)
-				}
-			} else {
-				newPrefix := ""
-				currPrefix := ifv.Type().Field(i).Name
-				if prefix != "" {
-					newPrefix = strings.Join([]string{prefix, currPrefix, placeholder}, ".")
-				} else {
-					newPrefix = strings.Join([]string{currPrefix, placeholder}, ".")
-				}
-				e := v.Type().Elem()
-				names = append(names, deepTypeFields(e, strings.ToLower(newPrefix))...)
+			fieldNames, err := deepFieldNames(v.Interface(), strings.ToLower(newPrefix))
+			if err != nil {
+				return nil, err
 			}
-		default:
-			prefWithPoint := ""
-			if prefix != "" {
-				prefWithPoint = prefix + "."
-			}
-			names = append(names, strings.ToLower(prefWithPoint+ifv.Type().Field(i).Name))
+			names = append(names, fieldNames...)
 		}
-	}
+	case reflect.Map:
+		keyKind := ifv.Type().Key().Kind()
+		if keyKind != reflect.String {
+			return nil, errors.New(fmt.Sprintf("maps in config must have string keys but got: %s key in %s", keyKind, ifv.Type()))
+		}
+		if len(ifv.MapKeys()) != 0 {
+			for _, k := range ifv.MapKeys() {
+				key := k.String()
+				newPrefix := ""
+				if prefix != "" {
+					newPrefix = strings.Join([]string{prefix /*, currPrefix*/, key}, ".")
+				}
 
-	return names
-}
-
-func deepTypeFields(t reflect.Type, prefix string) []string {
-	names := make([]string, 0)
-
-	switch t.Kind() {
-	case reflect.Struct:
-		for i := 0; i < t.NumField(); i++ {
-			tf := t.Field(i)
-
-			var newPref string
-			if prefix != "" {
-				newPref = strings.Join([]string{prefix, tf.Name}, ".")
-			} else {
-				newPref = tf.Name
+				fieldNames, err := deepFieldNames(ifv.MapIndex(k).Interface(), strings.ToLower(newPrefix))
+				if err != nil {
+					return nil, err
+				}
+				names = append(names, fieldNames...)
 			}
-
-			z := reflect.Zero(tf.Type)
-			names = append(names, deepTypeFields(z.Type(), strings.ToLower(newPref))...)
+		} else {
+			newPrefix := ""
+			if prefix != "" {
+				newPrefix = strings.Join([]string{prefix /*, currPrefix*/, placeholder}, ".")
+			}
+			e := ifv.Type().Elem()
+			value := reflect.Zero(e)
+			fieldNames, err := deepFieldNames(value.Interface(), strings.ToLower(newPrefix))
+			if err != nil {
+				return nil, err
+			}
+			names = append(names, fieldNames...)
 		}
 	default:
 		if prefix != "" {
 			names = append(names, strings.ToLower(prefix))
 		}
 	}
-	return names
+
+	return names, nil
 }
 
 // ToYaml returns yaml marshalled struct
