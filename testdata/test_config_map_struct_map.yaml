@@ -5,13 +5,3 @@ one:
         str: first-first
         num: 1
         flag: true
-  second:
-    two:
-      first:
-        str: second-first
-        num: 21
-        flag: false
-      second:
-        str: second-second
-        num: 22
-        flag: true

@@ -18,6 +18,7 @@ package insconfig
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"reflect"
 	"regexp"
@@ -88,6 +89,19 @@ func (i *insConfigurator) load(path string, configStruct interface{}) error {
 		}
 		fmt.Printf("failed to load config from '%s'\n", path)
 	}
+
+	// this 'if' block necessary for check duplicated map keys in YAML
+	if !i.params.FileNotRequired {
+		bytes, err := ioutil.ReadFile(path)
+		if err != nil {
+			return errors.Wrapf(err, "failed to read config file")
+		}
+		err = yaml.UnmarshalStrict(bytes, configStruct)
+		if err != nil && strings.Contains(err.Error(), "already set in map") {
+			return errors.Wrapf(err, "failed to unmarshal config file into configuration structure")
+		}
+	}
+
 	i.params.ViperHooks = append(i.params.ViperHooks, mapstructure.StringToTimeDurationHookFunc(), mapstructure.StringToSliceHookFunc(","))
 	err := i.viper.UnmarshalExact(configStruct, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
 		i.params.ViperHooks...,
@@ -95,7 +109,7 @@ func (i *insConfigurator) load(path string, configStruct interface{}) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to unmarshal config file into configuration structure")
 	}
-	configStructKeys, err := deepFieldNames(configStruct, "")
+	configStructKeys, err := deepFieldNames(configStruct, "", false)
 	if err != nil {
 		return err
 	}
@@ -184,7 +198,7 @@ func matchMapKey(keys map[string]bool, key string) (string, string, bool) {
 	for k := range keys {
 		l := strings.ToLower(k)
 		pattern := strings.ReplaceAll(l, ".", "\\.")
-		pattern = strings.Replace(pattern, placeholder, ".+", 1)
+		pattern = strings.ReplaceAll(pattern, placeholder, ".+")
 		match, err := regexp.MatchString(pattern, key)
 		if err != nil {
 			fmt.Println(err)
@@ -224,7 +238,7 @@ func stringInSlice(a string, list []string) bool {
 	return false
 }
 
-func deepFieldNames(iface interface{}, prefix string) ([]string, error) {
+func deepFieldNames(iface interface{}, prefix string, inMap bool) ([]string, error) {
 	names := make([]string, 0)
 	ifv := reflect.Indirect(reflect.ValueOf(iface))
 
@@ -255,26 +269,33 @@ func deepFieldNames(iface interface{}, prefix string) ([]string, error) {
 				newPrefix = currPrefix
 			}
 
-			fieldNames, err := deepFieldNames(v.Interface(), strings.ToLower(newPrefix))
+			fieldNames, err := deepFieldNames(v.Interface(), strings.ToLower(newPrefix), inMap)
 			if err != nil {
 				return nil, err
 			}
 			names = append(names, fieldNames...)
 		}
 	case reflect.Map:
+		if inMap {
+			return nil, errors.New("nested maps are not allowed in config")
+		}
+		inMap = true
 		keyKind := ifv.Type().Key().Kind()
 		if keyKind != reflect.String {
 			return nil, errors.New(fmt.Sprintf("maps in config must have string keys but got: %s key in %s", keyKind, ifv.Type()))
 		}
+
 		if len(ifv.MapKeys()) != 0 {
 			for _, k := range ifv.MapKeys() {
 				key := k.String()
 				newPrefix := ""
 				if prefix != "" {
-					newPrefix = strings.Join([]string{prefix /*, currPrefix*/, key}, ".")
+					newPrefix = strings.Join([]string{prefix, key}, ".")
+				} else {
+					newPrefix = key
 				}
 
-				fieldNames, err := deepFieldNames(ifv.MapIndex(k).Interface(), strings.ToLower(newPrefix))
+				fieldNames, err := deepFieldNames(ifv.MapIndex(k).Interface(), strings.ToLower(newPrefix), inMap)
 				if err != nil {
 					return nil, err
 				}
@@ -283,16 +304,20 @@ func deepFieldNames(iface interface{}, prefix string) ([]string, error) {
 		} else {
 			newPrefix := ""
 			if prefix != "" {
-				newPrefix = strings.Join([]string{prefix /*, currPrefix*/, placeholder}, ".")
+				newPrefix = strings.Join([]string{prefix, placeholder}, ".")
+			} else {
+				newPrefix = placeholder
 			}
+
 			e := ifv.Type().Elem()
 			value := reflect.Zero(e)
-			fieldNames, err := deepFieldNames(value.Interface(), strings.ToLower(newPrefix))
+			fieldNames, err := deepFieldNames(value.Interface(), strings.ToLower(newPrefix), inMap)
 			if err != nil {
 				return nil, err
 			}
 			names = append(names, fieldNames...)
 		}
+		inMap = false
 	default:
 		if prefix != "" {
 			names = append(names, strings.ToLower(prefix))

@@ -4,12 +4,3 @@ one:
       str: first-str
       num: 1
       flag: true
-    second:
-      str: second-str
-      num: 2
-      flag: false
-  second:
-    first:
-      str: second-str
-      num: 2
-      flag: false

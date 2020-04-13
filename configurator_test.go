@@ -348,6 +348,63 @@ func Test_Load(t *testing.T) {
 			Two map[string]MapValue
 		}
 
+		t.Run("map upper level yaml", func(t *testing.T) {
+			cfg := map[string]MapValue{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config_map_upper_level.yaml"},
+				FileNotRequired:  false,
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.NoError(t, err)
+			require.Len(t, cfg, 2)
+			first := cfg["first"]
+			require.Equal(t, "first-str", first.Str)
+			require.Equal(t, 1, first.Num)
+			require.True(t, first.Flag)
+			second := cfg["second"]
+			require.Equal(t, "second-str", second.Str)
+			require.Equal(t, 2, second.Num)
+			require.False(t, second.Flag)
+		})
+
+		t.Run("map upper level env", func(t *testing.T) {
+			_ = os.Setenv("TESTPREFIX_FIRST_STR", "first-str")
+			_ = os.Setenv("TESTPREFIX_FIRST_NUM", "1")
+			_ = os.Setenv("TESTPREFIX_FIRST_FLAG", "true")
+			_ = os.Setenv("TESTPREFIX_SECOND_STR", "second-str")
+			_ = os.Setenv("TESTPREFIX_SECOND_NUM", "2")
+			_ = os.Setenv("TESTPREFIX_SECOND_FLAG", "false")
+			defer os.Unsetenv("TESTPREFIX_FIRST_STR")
+			defer os.Unsetenv("TESTPREFIX_FIRST_NUM")
+			defer os.Unsetenv("TESTPREFIX_FIRST_FLAG")
+			defer os.Unsetenv("TESTPREFIX_SECOND_STR")
+			defer os.Unsetenv("TESTPREFIX_SECOND_NUM")
+			defer os.Unsetenv("TESTPREFIX_SECOND_FLAG")
+
+			cfg := map[string]MapValue{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{""},
+				FileNotRequired:  true,
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.NoError(t, err)
+			require.Len(t, cfg, 2)
+			first := cfg["first"]
+			require.Equal(t, "first-str", first.Str)
+			require.Equal(t, 1, first.Num)
+			require.True(t, first.Flag)
+			second := cfg["second"]
+			require.Equal(t, "second-str", second.Str)
+			require.Equal(t, 2, second.Num)
+			require.False(t, second.Flag)
+		})
+
 		t.Run("one map", func(t *testing.T) {
 			cfg := OneMap{}
 			params := insconfig.Params{
@@ -397,7 +454,7 @@ func Test_Load(t *testing.T) {
 			require.True(t, firstOfTwo.Flag)
 		})
 
-		t.Run("two maps nested", func(t *testing.T) {
+		t.Run("fail two nested maps yaml", func(t *testing.T) {
 			type TwoNested struct {
 				One map[string]map[string]MapValue
 			}
@@ -406,32 +463,41 @@ func Test_Load(t *testing.T) {
 			params := insconfig.Params{
 				EnvPrefix:        "testprefix",
 				ConfigPathGetter: testPathGetter{"testdata/test_config_two_maps_nested.yaml"},
+				FileNotRequired:  false,
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.Error(t, err)
+			require.Equal(t, "nested maps are not allowed in config", err.Error())
+		})
+
+		t.Run("fail two nested maps env", func(t *testing.T) {
+			_ = os.Setenv("TESTPREFIX_ONE_FIRST_FIRST_STR", "first-str")
+			_ = os.Setenv("TESTPREFIX_ONE_FIRST_FIRST_NUM", "1")
+			_ = os.Setenv("TESTPREFIX_ONE_FIRST_FIRST_FLAG", "true")
+			defer os.Unsetenv("TESTPREFIX_ONE_FIRST_FIRST_STR")
+			defer os.Unsetenv("TESTPREFIX_ONE_FIRST_FIRST_NUM")
+			defer os.Unsetenv("TESTPREFIX_ONE_FIRST_FIRST_FLAG")
+
+			type TwoNested struct {
+				One map[string]map[string]MapValue
+			}
+
+			cfg := TwoNested{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{""},
 				FileNotRequired:  true,
 			}
 
 			insConfigurator := insconfig.New(params)
 			err := insConfigurator.Load(&cfg)
-			require.NoError(t, err)
-			require.Len(t, cfg.One, 2)
-			first := cfg.One["first"]
-			require.Len(t, first, 2)
-			ff := first["first"]
-			require.Equal(t, "first-str", ff.Str)
-			require.Equal(t, 1, ff.Num)
-			require.True(t, ff.Flag)
-			fs := first["second"]
-			require.Equal(t, "second-str", fs.Str)
-			require.Equal(t, 2, fs.Num)
-			require.False(t, fs.Flag)
-			second := cfg.One["second"]
-			require.Len(t, second, 1)
-			sf := second["first"]
-			require.Equal(t, "second-str", sf.Str)
-			require.Equal(t, 2, sf.Num)
-			require.False(t, sf.Flag)
+			require.Error(t, err)
+			require.Equal(t, "nested maps are not allowed in config", err.Error())
 		})
 
-		t.Run("map-struct-map", func(t *testing.T) {
+		t.Run("fail map-struct-map yaml", func(t *testing.T) {
 			type StructMap struct {
 				Two map[string]MapValue
 			}
@@ -443,29 +509,41 @@ func Test_Load(t *testing.T) {
 			params := insconfig.Params{
 				EnvPrefix:        "testprefix",
 				ConfigPathGetter: testPathGetter{"testdata/test_config_map_struct_map.yaml"},
+				FileNotRequired:  false,
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.Error(t, err)
+			require.Equal(t, "nested maps are not allowed in config", err.Error())
+		})
+
+		t.Run("fail map-struct-map env", func(t *testing.T) {
+			_ = os.Setenv("TESTPREFIX_ONE_FIRST_TWO_FIRST_STR", "first-first")
+			_ = os.Setenv("TESTPREFIX_ONE_FIRST_TWO_FIRST_NUM", "1")
+			_ = os.Setenv("TESTPREFIX_ONE_FIRST_TWO_FIRST_FLAG", "true")
+			defer os.Unsetenv("TESTPREFIX_ONE_FIRST_TWO_FIRST_STR")
+			defer os.Unsetenv("TESTPREFIX_ONE_FIRST_TWO_FIRST_NUM")
+			defer os.Unsetenv("TESTPREFIX_ONE_FIRST_TWO_FIRST_FLAG")
+
+			type StructMap struct {
+				Two map[string]MapValue
+			}
+			type MapStructMap struct {
+				One map[string]StructMap
+			}
+
+			cfg := MapStructMap{}
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{""},
 				FileNotRequired:  true,
 			}
 
 			insConfigurator := insconfig.New(params)
 			err := insConfigurator.Load(&cfg)
-			require.NoError(t, err)
-			require.Len(t, cfg.One, 2)
-			first := cfg.One["first"]
-			require.Len(t, first.Two, 1)
-			ff := first.Two["first"]
-			require.Equal(t, "first-first", ff.Str)
-			require.Equal(t, 1, ff.Num)
-			require.True(t, ff.Flag)
-			second := cfg.One["second"]
-			require.Len(t, second.Two, 2)
-			sf := second.Two["first"]
-			require.Equal(t, "second-first", sf.Str)
-			require.Equal(t, 21, sf.Num)
-			require.False(t, sf.Flag)
-			ss := second.Two["second"]
-			require.Equal(t, "second-second", ss.Str)
-			require.Equal(t, 22, ss.Num)
-			require.True(t, ss.Flag)
+			require.Error(t, err)
+			require.Equal(t, "nested maps are not allowed in config", err.Error())
 		})
 
 		t.Run("fail one map int key", func(t *testing.T) {
@@ -503,18 +581,18 @@ func Test_Load(t *testing.T) {
 		})
 
 		t.Run("fail key duplication", func(t *testing.T) {
-			t.Skip("functionality wil be fixed in a next commit")
 			cfg := OneMap{}
 			params := insconfig.Params{
 				EnvPrefix:        "testprefix",
 				ConfigPathGetter: testPathGetter{"testdata/test_config_key_duplication.yaml"},
-				FileNotRequired:  true,
+				FileNotRequired:  false,
 			}
 
 			insConfigurator := insconfig.New(params)
 			err := insConfigurator.Load(&cfg)
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "ddddd")
+			require.Contains(t, err.Error(), "failed to unmarshal config file into configuration structure")
+			require.Contains(t, err.Error(), `key "first" already set in map`)
 		})
 	})
 }
