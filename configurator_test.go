@@ -454,6 +454,41 @@ func Test_Load(t *testing.T) {
 			require.True(t, firstOfTwo.Flag)
 		})
 
+		t.Run("map string values yaml", func(t *testing.T) {
+			cfg := make(map[string]string, 0)
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{"testdata/test_config_map_str.yaml"},
+				FileNotRequired:  false,
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.NoError(t, err)
+			require.Equal(t, "first-str", cfg["str"])
+			require.Equal(t, "1", cfg["num"])
+		})
+
+		t.Run("map string values env", func(t *testing.T) {
+			_ = os.Setenv("TESTPREFIX_STR", "first-str")
+			_ = os.Setenv("TESTPREFIX_NUM", "1")
+			defer os.Unsetenv("TESTPREFIX_STR")
+			defer os.Unsetenv("TESTPREFIX_NUM")
+
+			cfg := make(map[string]string, 0)
+			params := insconfig.Params{
+				EnvPrefix:        "testprefix",
+				ConfigPathGetter: testPathGetter{""},
+				FileNotRequired:  true,
+			}
+
+			insConfigurator := insconfig.New(params)
+			err := insConfigurator.Load(&cfg)
+			require.NoError(t, err)
+			require.Equal(t, "first-str", cfg["str"])
+			require.Equal(t, "1", cfg["num"])
+		})
+
 		t.Run("fail two nested maps yaml", func(t *testing.T) {
 			type TwoNested struct {
 				One map[string]map[string]MapValue
